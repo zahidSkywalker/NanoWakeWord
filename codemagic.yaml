@@ -161,12 +161,10 @@ workflows:
           ls -lh "$CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
 
     artifacts:
-      - build/**/*/*.app
-      - build/**/*/*.xcarchive
-      - **/*.ipa
-      - build/ipa_output/**/*
+      - build/ipa_output/*.ipa
+      - NanoWakeWord_unsigned.ipa
 
     publishing:
       artifacts:
-        - path: "**/*.ipa"
+        - path: NanoWakeWord_unsigned.ipa
           name: NanoWakeWord-IPA
