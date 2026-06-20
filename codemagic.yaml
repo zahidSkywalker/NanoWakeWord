@@ -84,84 +84,35 @@ workflows:
             SKIP_INSTALL=NO \
             2>&1 | tee build.log | xcpretty || { echo "BUILD FAILED"; tail -150 build.log; exit 1; }
 
-      - name: Create ExportOptions.plist
+      - name: Create IPA from archive
         script: |
-          cat > ExportOptions.plist << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>development</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-              <key>compileBitcode</key>
-              <false/>
-              <key>thinning</key>
-              <string>&lt;none&gt;</string>
-              <key>provisioningProfiles</key>
-              <dict/>
-              <key>signingCertificate</key>
-              <string>-</string>
-              <key>teamID</key>
-              <string></string>
-          </dict>
-          </plist>
-          PLIST
+          # Find the .app inside the xcarchive
+          APP_PATH=$(find build/NanoWakeWord.xcarchive -name "*.app" -type d | head -1)
+          echo "Found .app at: $APP_PATH"
 
-      - name: Export IPA
-        script: |
-          xcodebuild \
-            -exportArchive \
-            -archivePath build/NanoWakeWord.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath build/ipa_output \
-            2>&1 | tee export.log | xcpretty || {
-              echo "Standard export failed, creating manual IPA..."
-              # Fallback: manual IPA creation
-              APP_PATH=$(find build/NanoWakeWord.xcarchive -name "*.app" -type d | head -1)
-              if [ -z "$APP_PATH" ]; then
-                echo "ERROR: No .app found in build output"
-                exit 1
-              fi
-              mkdir -p Payload
-              cp -r "$APP_PATH" Payload/
-              zip -r NanoWakeWord_unsigned.ipa Payload/
-              echo "Manual IPA created successfully"
-            }
-
-      - name: Find and verify IPA
-        script: |
-          echo "=== Looking for IPA ==="
-          # Check Codemagic export path
-          if [ -d build/ipa_output ]; then
-            echo "Contents of ipa_output:"
-            ls -laR build/ipa_output/
-          fi
-          # Check manual IPA
-          if [ -f NanoWakeWord_unsigned.ipa ]; then
-            echo "Manual IPA found:"
-            ls -lh NanoWakeWord_unsigned.ipa
-          fi
-          # Search everywhere
-          find . -name "*.ipa" -exec ls -lh {} \;
-
-      - name: Copy IPA to artifact path
-        script: |
-          # Codemagic expects artifacts in specific locations
-          IPA_FILE=$(find . -name "*.ipa" -type f 2>/dev/null | head -1)
-          if [ -z "$IPA_FILE" ]; then
-            echo "No IPA found!"
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found in xcarchive"
+            echo "=== xcarchive contents ==="
+            find build/NanoWakeWord.xcarchive -type d | head -30
             exit 1
           fi
-          cp "$IPA_FILE" "$CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
-          echo "IPA ready at: $CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
-          ls -lh "$CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
+
+          # Manual IPA creation (unsigned)
+          rm -rf Payload
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r NanoWakeWord_unsigned.ipa Payload/
+          rm -rf Payload
+
+          echo "=== IPA created ==="
+          ls -lh NanoWakeWord_unsigned.ipa
+
+          # Copy to Codemagic build directory for artifact publishing
+          mkdir -p "$CM_BUILD_DIR"
+          cp NanoWakeWord_unsigned.ipa "$CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
+          echo "IPA copied to $CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
 
     artifacts:
-      - build/ipa_output/*.ipa
       - NanoWakeWord_unsigned.ipa
 
     
