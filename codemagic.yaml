@@ -164,7 +164,4 @@ workflows:
       - build/ipa_output/*.ipa
       - NanoWakeWord_unsigned.ipa
 
-    publishing:
-      artifacts:
-        - path: NanoWakeWord_unsigned.ipa
-          name: NanoWakeWord-IPA
+    
