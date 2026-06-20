@@ -75,7 +75,7 @@ class WakeWordViewModel: ObservableObject {
 
     init() {
         self.settings = .shared
-        self.wakeWordEngine = WakeWordEngine(settings: settings)
+        self.wakeWordEngine = WakeWordEngine()
         self.voiceAssistant = VoiceAssistant()
         self.hapticManager = HapticManager.shared
 

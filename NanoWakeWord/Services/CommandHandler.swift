@@ -410,10 +410,7 @@ class MathEngine {
 
         let mathExpression = String(expression[range])
         // Use NSExpression for safe evaluation
-        let expr: NSExpression
-        do {
-            expr = try NSExpression(format: mathExpression)
-        } catch {
+        guard let expr = NSExpression(format: mathExpression) as? NSExpression else {
             return nil
         }
         guard let result = expr.expressionValue(with: nil, context: nil) as? NSNumber else {

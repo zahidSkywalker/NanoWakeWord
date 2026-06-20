@@ -97,17 +97,17 @@ class AppSettings: ObservableObject {
         self.sensitivity = sensitivityRaw == 0 ? 0.5 : sensitivityRaw
         self.wakeWord = UserDefaults.standard.string(forKey: "wakeWord") ?? "Hey Diana"
         self.isListening = UserDefaults.standard.bool(forKey: "isListening")
-        self.enableHaptics = UserDefaults.standard.bool(forKey: "enableHaptics") ?? true
-        self.enableSound = UserDefaults.standard.bool(forKey: "enableSound") ?? true
-        self.enableVoiceResponse = UserDefaults.standard.bool(forKey: "enableVoiceResponse") ?? true
+        self.enableHaptics = UserDefaults.standard.object(forKey: "enableHaptics") as? Bool ?? true
+        self.enableSound = UserDefaults.standard.object(forKey: "enableSound") as? Bool ?? true
+        self.enableVoiceResponse = UserDefaults.standard.object(forKey: "enableVoiceResponse") as? Bool ?? true
         self.voiceGender = UserDefaults.standard.string(forKey: "voiceGender") ?? "female"
         let speakRateRaw = UserDefaults.standard.float(forKey: "speakRate")
         self.speakRate = speakRateRaw == 0 ? 0.5 : speakRateRaw
         self.language = UserDefaults.standard.string(forKey: "language") ?? "en-US"
-        self.autoStartListening = UserDefaults.standard.bool(forKey: "autoStartListening") ?? false
+        self.autoStartListening = UserDefaults.standard.object(forKey: "autoStartListening") as? Bool ?? false
         let timeoutRaw = UserDefaults.standard.double(forKey: "commandTimeout")
         self.commandTimeout = timeoutRaw == 0 ? 5.0 : timeoutRaw
-        self.darkMode = UserDefaults.standard.bool(forKey: "darkMode") ?? true
+        self.darkMode = UserDefaults.standard.object(forKey: "darkMode") as? Bool ?? true
 
         if let data = UserDefaults.standard.data(forKey: "personality"),
            let personality = try? JSONDecoder().decode(AssistantPersonality.self, from: data) {
