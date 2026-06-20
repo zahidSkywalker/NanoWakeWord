@@ -1,0 +1,181 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_reason:
+        description: 'Reason for build'
+        required: false
+        default: 'Manual build'
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build NanoWakeWord IPA
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        run: |
+          ls /Applications/ | grep Xcode
+          sudo xcode-select -s /Applications/Xcode_16.1.app 2>/dev/null || \
+          sudo xcode-select -s /Applications/Xcode_16.2.app 2>/dev/null || \
+          sudo xcode-select -s /Applications/Xcode_16.3.app 2>/dev/null || \
+          sudo xcode-select -s /Applications/Xcode_16.4.app 2>/dev/null || \
+          sudo xcode-select -s /Applications/Xcode_16.5.app 2>/dev/null || \
+          sudo xcode-select -s /Applications/Xcode_16.6.app 2>/dev/null || \
+          sudo xcode-select -s /Applications/Xcode_16.0.app 2>/dev/null || \
+          { echo "ERROR: No Xcode 16.x found"; exit 1; }
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create Xcode project
+        run: |
+          cat > project.yml << 'YML'
+          name: NanoWakeWord
+          options:
+            bundleIdPrefix: com.zahidul
+            deploymentTarget:
+              iOS: "16.0"
+            generateEmptyDirectories: true
+            groupSortPosition: top
+          settings:
+            base:
+              PRODUCT_BUNDLE_IDENTIFIER: com.zahidul.nanowakeword
+              MARKETING_VERSION: "1.0.0"
+              CURRENT_PROJECT_VERSION: "1"
+              SWIFT_VERSION: "5.0"
+              DEVELOPMENT_TEAM: ""
+              CODE_SIGN_IDENTITY: "-"
+              CODE_SIGNING_REQUIRED: "NO"
+              CODE_SIGNING_ALLOWED: "NO"
+              TARGETED_DEVICE_FAMILY: "1,2"
+          targets:
+            NanoWakeWord:
+              type: application
+              platform: iOS
+              sources:
+                - path: NanoWakeWord
+                  excludes:
+                    - "**/.DS_Store"
+              info:
+                path: NanoWakeWord/Resources/Info.plist
+              settings:
+                PRODUCT_BUNDLE_IDENTIFIER: com.zahidul.nanowakeword
+                CODE_SIGN_IDENTITY: "-"
+                CODE_SIGNING_REQUIRED: "NO"
+                CODE_SIGNING_ALLOWED: "NO"
+                DEVELOPMENT_TEAM: ""
+                LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+                ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
+          YML
+          xcodegen generate
+          ls -la NanoWakeWord.xcodeproj/
+
+      - name: Build unsigned archive
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project NanoWakeWord.xcodeproj \
+            -scheme NanoWakeWord \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED="NO" \
+            CODE_SIGNING_ALLOWED="NO" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            archive \
+            -archivePath build/NanoWakeWord.xcarchive \
+            SKIP_INSTALL=NO \
+            2>&1 | tee build.log | xcpretty || { echo "BUILD FAILED"; tail -150 build.log; exit 1; }
+
+      - name: Export IPA
+        run: |
+          cat > ExportOptions.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>compileBitcode</key>
+              <false/>
+              <key>thinning</key>
+              <string>&lt;none&gt;</string>
+              <key>provisioningProfiles</key>
+              <dict/>
+              <key>signingCertificate</key>
+              <string>-</string>
+              <key>teamID</key>
+              <string></string>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/NanoWakeWord.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath build/ipa_output \
+            2>&1 | tee export.log | xcpretty || {
+              echo "Standard export failed, creating manual IPA..."
+              APP_PATH=$(find build/NanoWakeWord.xcarchive -name "*.app" -type d | head -1)
+              if [ -z "$APP_PATH" ]; then
+                echo "ERROR: No .app found"
+                exit 1
+              fi
+              mkdir -p Payload
+              cp -r "$APP_PATH" Payload/
+              zip -r NanoWakeWord_unsigned.ipa Payload/
+              echo "Manual IPA created"
+            }
+
+      - name: Package IPA
+        run: |
+          IPA_FILE=$(find . -name "*.ipa" -type f 2>/dev/null | head -1)
+          if [ -z "$IPA_FILE" ]; then
+            APP_PATH=$(find build/ -name "*.app" -type d 2>/dev/null | head -1)
+            if [ -z "$APP_PATH" ]; then
+              echo "ERROR: No .app found in build output"
+              exit 1
+            fi
+            echo "Found .app at: $APP_PATH"
+            mkdir -p Payload
+            cp -r "$APP_PATH" Payload/
+            zip -r NanoWakeWord_unsigned.ipa Payload/
+            IPA_FILE="NanoWakeWord_unsigned.ipa"
+          fi
+          echo "Final IPA: $IPA_FILE"
+          ls -lh "$IPA_FILE"
+          cp "$IPA_FILE" NanoWakeWord_unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: NanoWakeWord-iPA
+          path: NanoWakeWord_unsigned.ipa
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          echo "## Build Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**IPA File:** NanoWakeWord_unsigned.ipa" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### How to install:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the IPA from Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "2. Open **eSign** on your iPhone" >> $GITHUB_STEP_SUMMARY
+          echo "3. Paste the download link or upload the IPA" >> $GITHUB_STEP_SUMMARY
+          echo "4. Sign with your Apple ID and install!" >> $GITHUB_STEP_SUMMARY
