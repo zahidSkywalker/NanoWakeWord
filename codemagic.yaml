@@ -114,42 +114,66 @@ workflows:
 
       - name: Upload IPA to GitHub Releases
         script: |
-          # Create a GitHub Release with the IPA as a direct download asset
-          TAG="v1.0.0-build-$CM_BUILD_ID"
+          TAG="v1.0.0-build-${CM_BUILD_ID:-manual}"
           REPO="zahidSkywalker/NanoWakeWord"
 
-          # Create a git tag
-          git tag "$TAG" 2>/dev/null || true
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "ERROR: GITHUB_TOKEN is not set!"
+            echo "Go to Codemagic > App Settings > Environment variables"
+            echo "Add: GITHUB_TOKEN = your_github_personal_access_token"
+            echo "Make sure the token has 'repo' (public_repo) scope"
+            exit 1
+          fi
 
-          # Create GitHub Release with the IPA attached
-          curl -s -X POST \
+          # Create GitHub Release (no local git tag needed)
+          RELEASE_RESP=$(curl -s -w "\n%{http_code}" -X POST \
             "https://api.github.com/repos/$REPO/releases" \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n --arg tag "$TAG" --arg name "Build $CM_BUILD_ID" --arg body "Auto-built IPA from Codemagic" '{
-              "tag_name": $tag,
-              "target_commitish": "main",
-              "name": $name,
-              "body": $body,
-              "draft": false,
-              "prerelease": true
-            }')" > release.json
+            -d "$(jq -n \
+              --arg tag "$TAG" \
+              --arg name "Build ${CM_BUILD_ID:-manual}" \
+              --arg body "Unsigned IPA from Codemagic CI" \
+              '{
+                "tag_name": $tag,
+                "target_commitish": "main",
+                "name": $name,
+                "body": $body,
+                "draft": false,
+                "prerelease": true
+              }')")
+          HTTP_CODE=$(echo "$RELEASE_RESP" | tail -1)
+          RELEASE_JSON=$(echo "$RELEASE_RESP" | sed '$d')
 
-          # Get the upload URL from the release response
-          UPLOAD_URL=$(jq -r '.upload_url' release.json | sed 's/{?name,label}//')
+          echo "GitHub API response code: $HTTP_CODE"
+          echo "$RELEASE_JSON" | jq '.' 2>/dev/null || echo "$RELEASE_JSON"
+
+          if [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: Failed to create release (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
           echo "Upload URL: $UPLOAD_URL"
 
           # Upload the IPA as a release asset
-          curl -s -X POST "$UPLOAD_URL?name=NanoWakeWord_unsigned.ipa" \
+          UPLOAD_RESP=$(curl -s -w "\n%{http_code}" -X POST \
+            "${UPLOAD_URL}?name=NanoWakeWord_unsigned.ipa" \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/octet-stream" \
-            --data-binary "@NanoWakeWord_unsigned.ipa"
+            --data-binary "@NanoWakeWord_unsigned.ipa")
+          HTTP_CODE=$(echo "$UPLOAD_RESP" | tail -1)
 
-          # Output the direct download URL
-          RELEASE_ID=$(jq -r '.id' release.json)
+          echo "Upload response code: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "201" ]; then
+            echo "ERROR: Failed to upload IPA (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
           echo ""
           echo "=========================================="
-          echo "DOWNLOAD LINK:"
+          echo "SUCCESS! Direct download link:"
           echo "https://github.com/$REPO/releases/download/$TAG/NanoWakeWord_unsigned.ipa"
           echo "=========================================="
 
