@@ -112,69 +112,52 @@ workflows:
           cp NanoWakeWord_unsigned.ipa "$CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
           echo "IPA copied to $CM_BUILD_DIR/NanoWakeWord_unsigned.ipa"
 
-      - name: Upload IPA to GitHub Releases
+      - name: Upload IPA for download
         script: |
-          TAG="v1.0.0-build-${CM_BUILD_ID:-manual}"
-          REPO="zahidSkywalker/NanoWakeWord"
+          echo "Uploading IPA to file hosting (no tokens needed)..."
 
-          if [ -z "$GITHUB_TOKEN" ]; then
-            echo "ERROR: GITHUB_TOKEN is not set!"
-            echo "Go to Codemagic > App Settings > Environment variables"
-            echo "Add: GITHUB_TOKEN = your_github_personal_access_token"
-            echo "Make sure the token has 'repo' (public_repo) scope"
-            exit 1
+          # Method 1: tmpfiles.org (keeps file for 1 hour, direct download)
+          LINK1=$(curl -s -F "file=@NanoWakeWord_unsigned.ipa" https://tmpfiles.org/api/v1/upload)
+          DL_URL1=$(echo "$LINK1" | jq -r '.data.url // empty' 2>/dev/null)
+          if [ -n "$DL_URL1" ]; then
+            # Convert page URL to direct download URL
+            DIRECT1="https://tmpfiles.org/dl$(echo "$DL_URL1" | sed 's|https://tmpfiles.org||')"
+            echo "tmpfiles.org: $DIRECT1"
           fi
 
-          # Create GitHub Release (no local git tag needed)
-          RELEASE_RESP=$(curl -s -w "\n%{http_code}" -X POST \
-            "https://api.github.com/repos/$REPO/releases" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg tag "$TAG" \
-              --arg name "Build ${CM_BUILD_ID:-manual}" \
-              --arg body "Unsigned IPA from Codemagic CI" \
-              '{
-                "tag_name": $tag,
-                "target_commitish": "main",
-                "name": $name,
-                "body": $body,
-                "draft": false,
-                "prerelease": true
-              }')")
-          HTTP_CODE=$(echo "$RELEASE_RESP" | tail -1)
-          RELEASE_JSON=$(echo "$RELEASE_RESP" | sed '$d')
-
-          echo "GitHub API response code: $HTTP_CODE"
-          echo "$RELEASE_JSON" | jq '.' 2>/dev/null || echo "$RELEASE_JSON"
-
-          if [ "$HTTP_CODE" != "201" ]; then
-            echo "ERROR: Failed to create release (HTTP $HTTP_CODE)"
-            exit 1
+          # Method 2: 0x0.st (direct link, no account needed)
+          LINK2=$(curl -s -F "file=@NanoWakeWord_unsigned.ipa" https://0x0.st)
+          if [ -n "$LINK2" ] && echo "$LINK2" | grep -q "^http"; then
+            echo "0x0.st: $LINK2"
           fi
 
-          UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
-          echo "Upload URL: $UPLOAD_URL"
-
-          # Upload the IPA as a release asset
-          UPLOAD_RESP=$(curl -s -w "\n%{http_code}" -X POST \
-            "${UPLOAD_URL}?name=NanoWakeWord_unsigned.ipa" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary "@NanoWakeWord_unsigned.ipa")
-          HTTP_CODE=$(echo "$UPLOAD_RESP" | tail -1)
-
-          echo "Upload response code: $HTTP_CODE"
-
-          if [ "$HTTP_CODE" != "201" ]; then
-            echo "ERROR: Failed to upload IPA (HTTP $HTTP_CODE)"
-            exit 1
+          # Method 3: Try GitHub Release if token is available (bonus)
+          if [ -n "$GITHUB_TOKEN" ]; then
+            TAG="v1.0.0-build-${CM_BUILD_ID:-manual}"
+            REPO="zahidSkywalker/NanoWakeWord"
+            echo "GITHUB_TOKEN found, also uploading to GitHub Releases..."
+            RELEASE_RESP=$(curl -s -w "\n%{http_code}" -X POST \
+              "https://api.github.com/repos/$REPO/releases" \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n --arg tag "$TAG" --arg name "Build ${CM_BUILD_ID:-manual}" \
+                --arg body "Unsigned IPA" \
+                '{tag_name:$tag,target_commitish:"main",name:$name,body:$body,draft:false,prerelease:true}')")
+            HTTP_CODE=$(echo "$RELEASE_RESP" | tail -1)
+            RELEASE_JSON=$(echo "$RELEASE_RESP" | sed '$d')
+            if [ "$HTTP_CODE" = "201" ]; then
+              UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
+              curl -s -X POST "${UPLOAD_URL}?name=NanoWakeWord_unsigned.ipa" \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@NanoWakeWord_unsigned.ipa"
+              echo "GitHub: https://github.com/$REPO/releases/download/$TAG/NanoWakeWord_unsigned.ipa"
+            fi
           fi
 
           echo ""
           echo "=========================================="
-          echo "SUCCESS! Direct download link:"
-          echo "https://github.com/$REPO/releases/download/$TAG/NanoWakeWord_unsigned.ipa"
+          echo "Use any link above in eSign -> Import"
           echo "=========================================="
 
     artifacts:
